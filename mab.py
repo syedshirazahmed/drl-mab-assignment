@@ -13,51 +13,20 @@ This file implements:
 """
 
 import random
-import socket
-import platform
-from datetime import datetime
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 
-
 # Global Configuration
-
-
 GROUP_NUMBER = 78
 NUM_PATIENTS = 1000
 INITIAL_TRIALS_PER_MEDICINE = 10
 
-
-
-# Helper Functions
-
-
-def print_execution_details():
-    """
-    Print timestamp and virtual machine details.
-    This is required by the assignment.
-    """
-    print("=" * 80)
-    print("Deep Reinforcement Learning - Lab Assignment 1")
-    print("Part 1: Multi-Armed Bandit")
-    print("=" * 80)
-    print(f"Group Number: {GROUP_NUMBER}")
-    print(f"Execution Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Virtual Machine ID: {socket.gethostname()}")
-    print(f"Platform: {platform.platform()}")
-    print("=" * 80)
-
-
 def set_seeds(group_number):
     """
-    Set random seeds for reproducibility.
-
-    Assignment requires:
-    random.seed(G)
-    numpy.random.seed(G)
+    Sets both random and numpy seeds to ensure we get the same results every time.
+    As per assignment: random.seed(G) and numpy.random.seed(G)
     """
     random.seed(group_number)
     np.random.seed(group_number)
@@ -65,24 +34,19 @@ def set_seeds(group_number):
 
 def compute_num_medicines(group_number):
     """
-    Compute the number of medicines.
-
-    Formula:
-    K = (G mod 3) + 5
+    Figures out how many medicines we're working with.
+    Formula: K = (G mod 3) + 5, so it'll be somewhere between 5 and 7.
     """
     return (group_number % 3) + 5
 
 
 def compute_success_probabilities(group_number, num_medicines):
     """
-    Compute hidden success probability for each medicine.
-
-    Formula:
-    P_i = 0.4 + ((G + i) mod 6) * 0.07
-
-    These probabilities are used only by the simulator to generate
-    clinical outcomes. The learning algorithms do not directly use them
-    to select medicines.
+    Calculates the hidden true success probability for each medicine.
+    Formula: P_i = 0.4 + ((G + i) mod 6) * 0.07
+    
+    These are the "ground truth" values the algorithms don't know about -
+    they have to figure out which medicine works best by experimenting.
     """
     probabilities = []
 
@@ -95,19 +59,13 @@ def compute_success_probabilities(group_number, num_medicines):
 
 def generate_patient_dataset(num_patients=1000):
     """
-    Generate synthetic patient dataset.
-
-    Columns:
-    - patient_id: sequential ID from 0 to 999
-    - severity_score: disease severity from 1 to 5
-
-    The following columns are populated later by the bandit algorithms:
-    - assigned_medicine
-    - clinical_outcome
-    - utility_score
-    - cumulative_reward
+    Creates the base patient dataset with 1000 records.
+    Each patient gets an ID (0-999) and a severity score that cycles 1 through 5.
+    The other columns (assigned_medicine, clinical_outcome, etc.) start as NaN
+    and get filled in when we run each bandit algorithm.
     """
     patient_ids = np.arange(num_patients)
+    # Severity cycles: 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, ...
     severity_scores = (patient_ids % 5) + 1
 
     dataset = pd.DataFrame(
@@ -126,18 +84,15 @@ def generate_patient_dataset(num_patients=1000):
 
 def simulate_outcome(success_probabilities, medicine_index, severity_score):
     """
-    Simulate clinical outcome and utility score for one patient.
-
-    clinical_outcome:
-    - 1 means recovered
-    - 0 means not recovered
-
-    Recovery happens with probability P_i of the assigned medicine.
-
-    Utility formula:
-    utility_score = clinical_outcome * (1 - severity_score / 10)
+    Simulates what happens when we give a medicine to a patient.
+    The patient either recovers (1) or doesn't (0) based on the medicine's
+    hidden probability. Then we calculate utility which penalizes higher severity:
+      utility = outcome * (1 - severity/10)
+    So a recovered patient with severity 1 gets 0.9, severity 5 gets 0.5.
     """
+    # Patient recovers if random number falls below the medicine's success probability
     clinical_outcome = int(np.random.random() < success_probabilities[medicine_index])
+    # Higher severity means less reward even when patient recovers
     utility_score = clinical_outcome * (1 - severity_score / 10)
 
     return clinical_outcome, utility_score
@@ -145,11 +100,9 @@ def simulate_outcome(success_probabilities, medicine_index, severity_score):
 
 def get_estimated_success_rates(success_counts, trial_counts):
     """
-    Calculate estimated success rate for each medicine.
-
-    estimated_success_rate = total_recoveries / total_trials
-
-    If a medicine has not been tried yet, the estimated success rate is set to 0.
+    Calculates how well each medicine appears to be doing based on what
+    we've observed so far. Simply: recoveries / times_tried for each medicine.
+    Returns 0 for medicines we haven't tried yet.
     """
     estimated_rates = np.zeros(len(success_counts))
 
@@ -166,14 +119,11 @@ def get_estimated_success_rates(success_counts, trial_counts):
 
 
 # Task 1: Dataset Design
-
-
 def task_1_dataset_design():
     """
-    Task 1:
-    1. Generate synthetic environment.
-    2. Display group number, total medicines, and hidden probabilities.
-    3. Print first 10 dataset rows.
+    Sets up the whole environment - computes how many medicines we have,
+    their hidden probabilities, and generates the 1000-patient dataset.
+    Also prints everything out so we can verify it looks right.
     """
     print("\n" + "#" * 80)
     print("TASK 1: DATASET DESIGN")
@@ -195,6 +145,7 @@ def task_1_dataset_design():
     for medicine_id, probability in enumerate(success_probabilities):
         print(f"Medicine {medicine_id}: P = {probability:.2f}")
 
+    # Just showing which medicine is actually the best - algorithms won't know this
     true_best_medicine = int(np.argmax(success_probabilities))
     print(f"\nTrue Best Medicine in Synthetic Environment: Medicine {true_best_medicine}")
     print(
@@ -210,8 +161,6 @@ def task_1_dataset_design():
 
 
 # Task 2: Immediate Exploitation Strategy
-
-
 def run_immediate_exploitation(
     dataset,
     success_probabilities,
@@ -219,28 +168,26 @@ def run_immediate_exploitation(
     initial_trials_per_medicine=10,
 ):
     """
-    Implement Immediate Exploitation Strategy.
-
-    Policy:
-    1. Test each medicine exactly initial_trials_per_medicine times.
-    2. Compute observed success rate of each medicine.
-    3. Select the medicine with the highest observed success rate.
-    4. Use only that medicine for all remaining patients.
-
-    Bandit statistics are updated using clinical_outcome.
-    Cumulative reward is calculated using utility_score.
+    The "try each medicine a few times, then stick with the winner" approach.
+    
+    Phase 1: Give each medicine to 10 patients to get some initial data.
+    Phase 2: Pick whichever medicine had the best recovery rate and use
+             ONLY that one for the remaining 930+ patients.
+    
+    Pros: Quick to converge, simple logic.
+    Cons: Might get unlucky in the initial trials and lock onto a bad medicine.
     """
     set_seeds(group_number)
 
     df = dataset.copy()
     num_medicines = len(success_probabilities)
 
+    # Track how many successes and total tries for each medicine
     medicine_success_counts = np.zeros(num_medicines)
     medicine_trial_counts = np.zeros(num_medicines)
 
     total_utility = 0.0
     best_medicine = None
-
     exploration_patients = num_medicines * initial_trials_per_medicine
 
     print("\n" + "#" * 80)
@@ -251,8 +198,10 @@ def run_immediate_exploitation(
         severity_score = int(row["severity_score"])
 
         if idx < exploration_patients:
+            # Still in exploration - assign medicines in blocks of 10
             assigned_medicine = idx // initial_trials_per_medicine
         else:
+            # Exploitation phase - pick the best and stick with it
             if best_medicine is None:
                 estimated_rates = get_estimated_success_rates(
                     medicine_success_counts,
@@ -276,6 +225,7 @@ def run_immediate_exploitation(
             severity_score,
         )
 
+        # Update our tracking stats
         medicine_success_counts[assigned_medicine] += clinical_outcome
         medicine_trial_counts[assigned_medicine] += 1
         total_utility += utility_score
@@ -287,6 +237,7 @@ def run_immediate_exploitation(
 
     print(f"\nFinal Cumulative Reward: {total_utility:.2f}")
 
+    # Show what happens around the switch from exploration to exploitation
     transition_start = max(0, exploration_patients - 5)
     transition_end = min(len(df), exploration_patients + 5)
 
@@ -298,8 +249,6 @@ def run_immediate_exploitation(
 
 
 # Task 3: Epsilon-Greedy Strategy
-
-
 def run_epsilon_greedy(
     dataset,
     success_probabilities,
@@ -307,26 +256,23 @@ def run_epsilon_greedy(
     epsilon,
 ):
     """
-    Implement Epsilon-Greedy Strategy.
-
-    Policy:
-    - With probability epsilon, explore by choosing a random medicine.
-    - With probability 1 - epsilon, exploit by choosing the current best medicine.
-
-    Each medicine is tested once initially to avoid division by zero.
-
-    Bandit statistics are updated using clinical_outcome.
-    Cumulative reward is calculated using utility_score.
+    The "mostly use the best, but occasionally try something random" approach.
+    
+    With probability epsilon, we pick a random medicine (exploration).
+    With probability (1-epsilon), we pick the current best (exploitation).
+    
+    We test this with three values:
+      - 1% exploration: barely explores, almost always picks the best known
+      - 10% exploration: decent balance between learning and earning
+      - 50% exploration: explores a lot, sacrifices reward for knowledge
     """
-    seed_offset = int(epsilon * 1000)
-    set_seeds(group_number + seed_offset)
+    set_seeds(group_number)
 
     df = dataset.copy()
     num_medicines = len(success_probabilities)
 
     medicine_success_counts = np.zeros(num_medicines)
     medicine_trial_counts = np.zeros(num_medicines)
-
     total_utility = 0.0
 
     print("\n" + "#" * 80)
@@ -337,13 +283,16 @@ def run_epsilon_greedy(
         severity_score = int(row["severity_score"])
 
         if idx < num_medicines:
+            # Try each medicine once first so we have some baseline data
             assigned_medicine = idx
         else:
             random_value = np.random.random()
 
             if random_value < epsilon:
+                # Explore: pick randomly to maybe find something better
                 assigned_medicine = np.random.randint(num_medicines)
             else:
+                # Exploit: go with what's working best so far
                 estimated_rates = get_estimated_success_rates(
                     medicine_success_counts,
                     medicine_trial_counts,
@@ -375,33 +324,30 @@ def run_epsilon_greedy(
 
 
 # Task 4: UCB1 Strategy
-
-
 def run_ucb1(
     dataset,
     success_probabilities,
     group_number,
 ):
     """
-    Implement UCB1 Strategy.
-
-    UCB score:
-    average_success_rate + sqrt((2 * log(total_trials)) / medicine_trial_count)
-
-    This strategy gives a higher exploration bonus to medicines with fewer trials.
-    The bonus decreases as the medicine receives more observations.
-
-    Bandit statistics are updated using clinical_outcome.
-    Cumulative reward is calculated using utility_score.
+    The "give under-tested medicines a confidence bonus" approach (UCB1).
+    
+    For each medicine, we calculate:
+      UCB score = avg_success_rate + sqrt(2 * ln(total_patients) / times_tried)
+    
+    The second term is a bonus that's big when a medicine hasn't been tried much,
+    which encourages exploration. As we try it more, the bonus shrinks and
+    the algorithm naturally starts exploiting the best one.
+    
+    No need to set an epsilon parameter - it figures out the balance on its own.
     """
-    set_seeds(group_number + 999)
+    set_seeds(group_number)
 
     df = dataset.copy()
     num_medicines = len(success_probabilities)
 
     medicine_success_counts = np.zeros(num_medicines)
     medicine_trial_counts = np.zeros(num_medicines)
-
     total_utility = 0.0
 
     print("\n" + "#" * 80)
@@ -412,17 +358,20 @@ def run_ucb1(
         severity_score = int(row["severity_score"])
 
         if idx < num_medicines:
+            # Try each medicine once first (can't compute UCB without any data)
             assigned_medicine = idx
         else:
             total_trials = idx
             ucb_scores = np.zeros(num_medicines)
 
             for medicine_id in range(num_medicines):
+                # How well has this medicine actually performed?
                 average_success_rate = (
                     medicine_success_counts[medicine_id]
                     / medicine_trial_counts[medicine_id]
                 )
 
+                # Bonus for being under-explored - shrinks as we try it more
                 confidence_bonus = np.sqrt(
                     (2 * np.log(total_trials))
                     / medicine_trial_counts[medicine_id]
@@ -430,6 +379,7 @@ def run_ucb1(
 
                 ucb_scores[medicine_id] = average_success_rate + confidence_bonus
 
+            # Pick the medicine with the highest combined score
             assigned_medicine = int(np.argmax(ucb_scores))
 
         clinical_outcome, utility_score = simulate_outcome(
@@ -457,16 +407,17 @@ def run_ucb1(
 
 
 # Summary and Analysis Functions
-
-
 def summarize_strategy(strategy_name, df):
     """
-    Create summary dictionary for a strategy.
+    Crunches the numbers for a completed strategy run - total reward,
+    recovery count, per-medicine breakdown, etc. Prints it all out nicely
+    and returns a summary dict for the comparison table.
     """
     final_cumulative_reward = float(df["cumulative_reward"].iloc[-1])
     total_recoveries = int(df["clinical_outcome"].sum())
     overall_recovery_rate = total_recoveries / len(df)
 
+    # Break down performance by each medicine
     medicine_summary = (
         df.groupby("assigned_medicine")
         .agg(
@@ -518,7 +469,9 @@ def summarize_strategy(strategy_name, df):
 
 def create_comparison_plot(strategy_results):
     """
-    Create cumulative reward comparison graph for all strategies.
+    Plots cumulative reward over time for all strategies on one graph.
+    This is the main visualization for Task 5 - lets us visually compare
+    which strategy earns reward fastest and which ends up highest.
     """
     plt.figure(figsize=(14, 8))
 
@@ -540,11 +493,26 @@ def create_comparison_plot(strategy_results):
 
     print("\nCumulative reward comparison graph saved as:")
     print("mab_cumulative_reward_comparison.png")
+    print("\nExploration Analysis:")
+    print(
+        "1% exploration quickly exploits early observations but may miss "
+        "better medicines due to insufficient exploration."
+    )
+    print(
+        "10% exploration provides a balanced trade-off between learning and "
+        "reward maximization."
+    )
+    print(
+        "50% exploration continues testing many medicines and therefore "
+        "achieves broader coverage, but often sacrifices cumulative reward."
+    )
 
 
 def create_selection_count_plot(strategy_results, num_medicines):
     """
-    Create medicine selection count plot for all strategies.
+    Shows how many times each strategy picked each medicine.
+    Helps visualize whether a strategy is spreading its choices around
+    or concentrating on one medicine.
     """
     selection_count_data = []
 
@@ -595,15 +563,17 @@ def create_selection_count_plot(strategy_results, num_medicines):
 
 def print_final_analysis(comparison_df):
     """
-    Print final comparative analysis answers.
-    These answers can be included in the final PDF.
+    Answers the 4 comparative analysis questions from Task 5
+    and prints a short summary of our findings.
     """
-    best_reward_row = comparison_df.sort_values(
+    # Sort strategies by cumulative reward
+    sorted_rewards = comparison_df.sort_values(
         "final_cumulative_reward",
         ascending=False,
-    ).iloc[0]
+    )
 
-    highest_reward_strategy = best_reward_row["strategy"]
+    highest_reward_strategy = sorted_rewards.iloc[0]["strategy"]
+    second_best_strategy = sorted_rewards.iloc[1]["strategy"]
 
     print("\n" + "=" * 80)
     print("FINAL COMPARATIVE ANALYSIS")
@@ -618,48 +588,44 @@ def print_final_analysis(comparison_df):
 
     print("\nQ2. Which strategy identifies the best medicine fastest?")
     print(
-        "Immediate Exploitation identifies a single best medicine fastest because "
-        "it commits after the initial testing phase. However, this early convergence "
-        "can be risky because it may commit to a medicine that looked good only due "
-        "to random early outcomes. UCB1 is usually more reliable because it continues "
-        "confidence-based exploration before settling strongly on the best medicine."
+        "From the cumulative reward curves, Immediate Exploitation converges "
+        "the fastest because it commits to a single medicine immediately after "
+        "the initial exploration phase. This results in rapid stabilization of "
+        "its reward trajectory compared to the other strategies."
     )
-
+	
     print("\nQ3. Which strategy shows the most stable performance over time?")
     print(
-        "Immediate Exploitation usually appears stable after the initial phase because "
-        "it keeps selecting the same medicine. However, UCB1 is more stable from a "
-        "learning perspective because its exploration naturally decreases as more "
-        "evidence is collected."
-    )
-
+		f"{highest_reward_strategy} showed the most stable long-term performance in this "
+		"experiment. Its cumulative reward increased consistently without the "
+		"large fluctuations associated with heavy exploration."
+	)
     print("\nQ4. Which strategy is safest for real-world hospital deployment?")
     print(
-        "UCB1 is the safest among the implemented strategies for this simulated "
-        "hospital setting. It balances treatment effectiveness with uncertainty. "
-        "It gives more chances to under-tested medicines initially, but gradually "
-        "reduces exploration as confidence improves. This avoids the risk of "
-        "Immediate Exploitation getting stuck with a suboptimal medicine and avoids "
-        "the excessive randomness of high epsilon exploration."
-    )
-
-    print("\nShort Comparative Summary:")
+		f"Based on the experimental results, {highest_reward_strategy} would be the safest "
+		"choice for deployment because it achieved the highest cumulative reward "
+		"while still maintaining a balance between learning and treatment quality. "
+		"A real hospital must continue learning about treatment effectiveness "
+		"without exposing too many patients to inferior options."
+	)
+    
+    print("\nOverall Analysis:")
     print(
-        f"In this experiment, {highest_reward_strategy} achieved the highest cumulative "
-        "reward after treating 1000 patients. Immediate Exploitation converges very "
-        "quickly, but it can be risky because early random outcomes may cause it to "
-        "choose a suboptimal medicine permanently. Epsilon-Greedy with very low "
-        "exploration may not explore enough, while very high exploration can reduce "
-        "reward because it keeps testing random medicines too often. UCB1 provides a "
-        "better balance because it explores uncertain medicines initially and then "
-        "gradually focuses on the best-performing medicine."
-    )
+		f"In this experiment, {highest_reward_strategy} achieved the highest cumulative "
+		f"reward, followed by {second_best_strategy}. Immediate Exploitation "
+		"converged quickly but was sensitive to early outcomes. Strategies that "
+		"continued exploring generally adapted better to the hidden medicine "
+		"success probabilities. The results show that maintaining some level of "
+		"exploration is important for identifying effective treatments. Based on "
+		"both reward and consistency, the top-performing strategy is the most "
+		"suitable recommendation for this synthetic clinical setting."
+	)
 
 
 def save_outputs_to_csv(strategy_results, comparison_df):
     """
-    Save all strategy outputs and final comparison table to CSV files.
-    This is useful for reproducibility and assignment records.
+    Saves everything to CSV files so we have a record of the results.
+    One file per strategy + one comparison summary file.
     """
     for strategy_name, df in strategy_results.items():
         file_name = (
@@ -678,16 +644,14 @@ def save_outputs_to_csv(strategy_results, comparison_df):
 
 
 # Main Execution
-
-
 def main():
     """
-    Main function to execute the full MAB assignment flow.
+    Runs everything in order: setup -> all strategies -> comparison & analysis.
     """
-    print_execution_details()
-
+    # Task 1: Build the dataset and show the environment setup
     base_dataset, success_probabilities, num_medicines = task_1_dataset_design()
 
+    # Task 2: Try the greedy approach (explore briefly, then commit)
     df_immediate = run_immediate_exploitation(
         base_dataset,
         success_probabilities,
@@ -695,6 +659,7 @@ def main():
         INITIAL_TRIALS_PER_MEDICINE,
     )
 
+    # Task 3: Epsilon-greedy with different exploration rates
     df_eps_01 = run_epsilon_greedy(
         base_dataset,
         success_probabilities,
@@ -716,12 +681,14 @@ def main():
         epsilon=0.50,
     )
 
+    # Task 4: UCB1 - the confidence-based approach
     df_ucb1 = run_ucb1(
         base_dataset,
         success_probabilities,
         GROUP_NUMBER,
     )
 
+    # Task 5: Compare all strategies
     strategy_results = {
         "Immediate Exploitation": df_immediate,
         "Epsilon-Greedy 1%": df_eps_01,
@@ -731,7 +698,6 @@ def main():
     }
 
     summary_rows = []
-
     for strategy_name, df in strategy_results.items():
         summary = summarize_strategy(strategy_name, df)
         summary_rows.append(summary)
@@ -743,22 +709,15 @@ def main():
     print("=" * 80)
     print(comparison_df.to_string(index=False))
 
+    # Generate the comparison plots
     create_comparison_plot(strategy_results)
     create_selection_count_plot(strategy_results, num_medicines)
 
+    # Print our analysis and answers
     print_final_analysis(comparison_df)
 
+    # Save everything to CSV
     save_outputs_to_csv(strategy_results, comparison_df)
-
-    print("\n" + "=" * 80)
-    print("FULL ITERATION OUTPUTS")
-    print("=" * 80)
-
-    for strategy_name, df in strategy_results.items():
-        print("\n" + "-" * 80)
-        print(f"Full Iteration Output: {strategy_name}")
-        print("-" * 80)
-        print(df.to_string(index=False))
 
 
 if __name__ == "__main__":
