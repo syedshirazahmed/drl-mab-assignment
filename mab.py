@@ -664,7 +664,7 @@ def main():
     """
 
 	# Print execution details
-	print_execution_details()
+    print_execution_details()
     
 	# Task 1: Build the dataset and show the environment setup
     base_dataset, success_probabilities, num_medicines = task_1_dataset_design()
