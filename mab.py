@@ -29,7 +29,7 @@ def print_execution_details():
     """
     print("=" * 80)
     print("Deep Reinforcement Learning - Lab Assignment 1")
-    print("Part 1: Multi-Armed Bandit")
+    print("Part 1: Multi-Armed Bandits")
     print("=" * 80)
     print(f"Group Number: {GROUP_NUMBER}")
     print(f"Execution Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -662,7 +662,11 @@ def main():
     """
     Runs everything in order: setup -> all strategies -> comparison & analysis.
     """
-    # Task 1: Build the dataset and show the environment setup
+
+	# Print execution details
+	print_execution_details()
+    
+	# Task 1: Build the dataset and show the environment setup
     base_dataset, success_probabilities, num_medicines = task_1_dataset_design()
 
     # Task 2: Try the greedy approach (explore briefly, then commit)
