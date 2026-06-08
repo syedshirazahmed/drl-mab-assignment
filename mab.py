@@ -23,6 +23,20 @@ GROUP_NUMBER = 78
 NUM_PATIENTS = 1000
 INITIAL_TRIALS_PER_MEDICINE = 10
 
+def print_execution_details():
+    """
+    Prints timestamp and virtual machine details.
+    """
+    print("=" * 80)
+    print("Deep Reinforcement Learning - Lab Assignment 1")
+    print("Part 1: Multi-Armed Bandit")
+    print("=" * 80)
+    print(f"Group Number: {GROUP_NUMBER}")
+    print(f"Execution Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Virtual Machine ID: {socket.gethostname()}")
+    print(f"Platform: {platform.platform()}")
+    print("=" * 80)
+
 def set_seeds(group_number):
     """
     Sets both random and numpy seeds to ensure we get the same results every time.
