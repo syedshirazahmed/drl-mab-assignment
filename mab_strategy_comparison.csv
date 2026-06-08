@@ -1,0 +1,6 @@
+strategy,final_cumulative_reward,total_recoveries,overall_recovery_rate,most_selected_medicine,estimated_best_medicine
+Immediate Exploitation,380.1,547,0.547,2,4
+Epsilon-Greedy 1%,353.40000000000015,509,0.509,2,2
+Epsilon-Greedy 10%,459.10000000000025,654,0.654,4,4
+Epsilon-Greedy 50%,416.80000000000007,593,0.593,4,4
+UCB1,416.3,596,0.596,4,4
